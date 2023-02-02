@@ -11,7 +11,7 @@ class MyCameraNode(DTROS):
     def __init__(self, node_name):
         # initialize the DTROS parent class
         super(MyCameraNode, self).__init__(node_name=node_name, node_type=NodeType.GENERIC)
-        # construct publisher
+        # construct publisher and subscriber
         self.sub = rospy.Subscriber(f"/{os.environ['VEHICLE_NAME']}/camera_node/image/compressed", CompressedImage, self.callback)
         self.pub = rospy.Publisher('custom_camera/compressed', CompressedImage, queue_size=10)
 
