@@ -55,7 +55,7 @@ class OdometryNode(DTROS):
       self.initialized_left = True
       self.initial_ticks_left = data.data
     else:
-      self.distance_travelled_left = 2 * math.pi * self._radius * (data.data - self.initial_ticks_left) / self._total_ticks
+      self.distance_travelled_left = 2 * math.pi * self._radius * abs(data.data - self.initial_ticks_left) / self._total_ticks
   
   def right_callback(self, data):
     # rospy.loginfo("Right data: %s", data.data)
@@ -63,7 +63,7 @@ class OdometryNode(DTROS):
       self.initialized_right = True
       self.initial_ticks_right = data.data
     else:
-      self.distance_travelled_right = 2 * math.pi * self._radius * (data.data - self.initial_ticks_right) / self._total_ticks
+      self.distance_travelled_right = 2 * math.pi * self._radius * abs(data.data - self.initial_ticks_right) / self._total_ticks
   
   def command_callback(self, data):
     rospy.loginfo("Header sequence: %s", data.header.seq)
@@ -98,19 +98,36 @@ class OdometryNode(DTROS):
     # publish message every 1 second
     rate = rospy.Rate(1) # 1
     # self.driver.set_wheels_speed(left=self.left_velocity, right=self.right_velocity)
+    forward = True
     while not rospy.is_shutdown():
-      if max(self.distance_travelled_right, self.distance_travelled_left) >= 1.25:
-        self.msg_wheels_cmd.header.stamp = rospy.Time.now()
-        self.msg_wheels_cmd.vel_left = 0.0
-        self.msg_wheels_cmd.vel_right = 0.0
-        self.pub_wheel_command.publish(self.msg_wheels_cmd)
-        # rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
+      if forward:
+        if max(self.distance_travelled_right, self.distance_travelled_left) >= 1.25:
+          self.msg_wheels_cmd.header.stamp = rospy.Time.now()
+          self.msg_wheels_cmd.vel_left = 0.0
+          self.msg_wheels_cmd.vel_right = 0.0
+          self.pub_wheel_command.publish(self.msg_wheels_cmd)
+          forward = False
+          # rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
+        else:
+          self.msg_wheels_cmd.header.stamp = rospy.Time.now()
+          self.msg_wheels_cmd.vel_left = self.left_velocity
+          self.msg_wheels_cmd.vel_right = self.right_velocity
+          self.pub_wheel_command.publish(self.msg_wheels_cmd)
+        rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
       else:
-        self.msg_wheels_cmd.header.stamp = rospy.Time.now()
-        self.msg_wheels_cmd.vel_left = self.left_velocity
-        self.msg_wheels_cmd.vel_right = self.right_velocity
-        self.pub_wheel_command.publish(self.msg_wheels_cmd)
-      rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
+        if max(self.distance_travelled_right, self.distance_travelled_left) >= 2.5:
+          self.msg_wheels_cmd.header.stamp = rospy.Time.now()
+          self.msg_wheels_cmd.vel_left = 0.0
+          self.msg_wheels_cmd.vel_right = 0.0
+          self.pub_wheel_command.publish(self.msg_wheels_cmd)
+          break
+          # rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
+        else:
+          self.msg_wheels_cmd.header.stamp = rospy.Time.now()
+          self.msg_wheels_cmd.vel_left = -self.left_velocity
+          self.msg_wheels_cmd.vel_right = -self.right_velocity
+          self.pub_wheel_command.publish(self.msg_wheels_cmd)
+        rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
       rate.sleep()
 
 if __name__ == '__main__':
