@@ -28,8 +28,8 @@ class OdometryNode(DTROS):
 
     # Celina's Robot
     # TODO: add
-    self.right_velocity = 0.4297693967819214
-    self.left_velocity = 0.5252736806869507
+    self.right_velocity = 0.4779990613460541
+    self.left_velocity = 0.477044016122818
 
     # Initialize the executed commands message
     self.msg_wheels_cmd = WheelsCmdStamped()
@@ -131,8 +131,8 @@ class OdometryNode(DTROS):
 if __name__ == '__main__':
   node = OdometryNode(node_name='my_encoder_node')
   # Run the publisher
-  node.runDistancePublisher()
+  # node.runDistancePublisher()
   # Keep it spinning to keep the node alive
-  # node.run()
+  node.run()
   rospy.spin()
   rospy.loginfo("wheel_encoder_node is up and running...")
