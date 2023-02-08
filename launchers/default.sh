@@ -17,8 +17,13 @@ dt-launchfile-init
 # sleep 5
 # dt-exec rosrun my_package my_publisher_node.py
 # dt-exec rosrun my_package my_subscriber_node.py
+# rossrv
+# rossrv info
+# ls -al /code/catkin_ws/build/my_package
+# ls -Ral /code/catkin_ws
 # rossrv info my_package/ColorService
 roslaunch my_package multiple_nodes.launch veh:=$VEHICLE_NAME
+# rosrun my_package led_server.py
 
 # ----------------------------------------------------------------------------
 # YOUR CODE ABOVE THIS LINE
