@@ -5,7 +5,6 @@ import rospy
 from duckietown.dtros import DTROS, NodeType, TopicType, DTParam, ParamType
 from duckietown_msgs.msg import Twist2DStamped, WheelEncoderStamped, WheelsCmdStamped
 from std_msgs.msg import Header, Float32
-# from wheels_driver.dagu_wheels_driver import DaguWheelsDriver
 
 class OdometryNode(DTROS):
   def __init__(self, node_name):
@@ -22,9 +21,12 @@ class OdometryNode(DTROS):
     self._radius = rospy.get_param(f'/{self.veh_name}/kinematics_node/radius', 100)
     self._total_ticks = 135
     self._L = 0.05
+
     # Nadeen's Robot
-    self.right_velocity = 0.4297693967819214
-    self.left_velocity = 0.5252736806869507
+    # self.right_velocity = 0.4297693967819214
+    # self.left_velocity = 0.5252736806869507
+
+    rospy.on_shutdown(self.clean_shutdown)
 
     # Celina's Robot
     # TODO: add
@@ -62,10 +64,6 @@ class OdometryNode(DTROS):
     if self.initial_ticks_right < 0: self.initial_ticks_right = msg.data # set initial ticks if uninitialized
 
   def command_callback(self, data):
-    # rospy.loginfo("Header sequence: %s", data.header.seq)
-    # rospy.loginfo("Header stamp: %s", data.header.stamp)
-    # rospy.loginfo("Header frame id: %s", data.header.frame_id)
-    # rospy.loginfo("Header sequence: %s", data.header.seq)
     rospy.loginfo("Left velocity data: %s", data.vel_left)
     rospy.loginfo("Right velocity data: %s", data.vel_right)
 
@@ -76,27 +74,39 @@ class OdometryNode(DTROS):
       self.pub_integrated_distance.publish(self.distanceTravelled())
       rate.sleep()
 
+  def clean_shutdown(self):
+    self.publishCommand(0.0, 0.0)
+
   def run(self):
-    # publish message every 1 second
-    rate = rospy.Rate(10) # 1
-    state = "forward"
+    # publish 10 messages every second
+    rate = rospy.Rate(10)
+    # state = ["forward", None]
+    state = ["right-turn", "forward", "left-turn", "forward", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn","left-turn", None]
+    i = 0
+    # motion = "forward"
     while not rospy.is_shutdown():
-      if state == "forward":
-        if self.distanceTravelled() < 1:
+      if state[i] == "forward":
+        if self.distanceTravelled() < 1.1:
           self.publishCommand(self.left_velocity, self.right_velocity)
         else:
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
-          state = "turn"
-      if state == "turn":
-        # TODO: adjust this, overturns/underturns at times
-        if self.angleTurned() < math.pi / 2:
+          if i < len(state) - 1: i += 1
+      if state[i] == "right-turn":
+        if self.angleTurned() < math.pi/2:
+          self.publishCommand(self.left_velocity, -self.right_velocity)
+        else:
+          self.publishCommand(0.0, 0.0)
+          self.resetInitialTicks()
+          if i < len(state) - 1: i += 1
+      if state[i] == "left-turn":
+        if self.angleTurned() < math.pi/2:
           self.publishCommand(-self.left_velocity, self.right_velocity)
         else:
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
-          state = "forward"
-      rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
+          if i < len(state) - 1: i += 1
+      # rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
       rate.sleep()
     self.publishCommand(0.0, 0.0)
 
