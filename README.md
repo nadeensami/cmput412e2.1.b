@@ -44,3 +44,4 @@ command.
 ## Resources:
 
 https://get-help.robotigniteacademy.com/t/how-to-stop-your-robot-when-ros-is-shutting-down/225
+https://github.com/duckietown/dt-core/blob/daffy/packages/led_emitter/src/led_emitter_node.py
