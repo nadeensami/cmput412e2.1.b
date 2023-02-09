@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import math
+import math, time
 import rospy
 from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import WheelEncoderStamped, WheelsCmdStamped
@@ -14,6 +14,8 @@ class OdometryNode(DTROS):
     Wheel Encoder Node
     This implements basic functionality with the wheel encoders.
     """
+
+    self._start_time = time.time()
 
     # Initialize the DTROS parent class
     super(OdometryNode, self).__init__(node_name=node_name, node_type=NodeType.PERCEPTION)
@@ -83,20 +85,27 @@ class OdometryNode(DTROS):
       rate.sleep()
 
   def clean_shutdown(self):
+    self.change_color("off")
     self.publishCommand(0.0, 0.0)
 
   def run(self):
     rate = rospy.Rate(10) # 10 times a second
-    tasks = ["state-1", "state-2", "right-turn", "forward", "left-turn", "forward", "state-1", "state-3", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn","left-turn", "state-1"]
+    tasks = ["state-1", "state-2", "right-turn", "forward", "left-turn", "forward", "state-1",
+      "state-3", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn","left-turn",
+      "state-1", "state-4", "circular-turn"]
+
+    # tasks = ["state-2", "right-turn", "forward"]
+
+    # tasks = ["circular-turn"]
     i = 0
 
     rate_5s = rospy.Rate(0.2) # 5 second rate
-    while not rospy.is_shutdown():
+    while not rospy.is_shutdown() and i < len(tasks):
       if tasks[i] == "state-1":
-        self.publishCommand(0.0, 0.0)
-        self.resetInitialTicks()        
+        # self.publishCommand(0.0, 0.0)
+        # self.resetInitialTicks()        
         self.change_color(self._state_color[1])
-        rate_5s.sleep()        
+        time.sleep(5)        
         i += 1
 
       elif tasks[i] == "state-2":
@@ -105,6 +114,10 @@ class OdometryNode(DTROS):
 
       elif tasks[i] == "state-3":
         self.change_color(self._state_color[3])
+        i += 1
+
+      elif tasks[i] == "state-4":
+        self.change_color(self._state_color[4])
         i += 1
 
       elif tasks[i] == "forward":
@@ -116,7 +129,7 @@ class OdometryNode(DTROS):
           i += 1
 
       elif tasks[i] == "right-turn":
-        if self.angleTurned() < 1.535:
+        if self.angleTurned() < 1.53:
           self.publishCommand(self.left_velocity, -self.right_velocity)
         else:
           self.publishCommand(0.0, 0.0)
@@ -129,11 +142,23 @@ class OdometryNode(DTROS):
         else:
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
-          i += 1      
+          i += 1 
+
+      elif tasks[i] == "circular-turn":
+        if self.distanceTravelled() < 3.5:
+          self.publishCommand(self.left_velocity, self.right_velocity  * 0.7)
+        else:
+          self.publishCommand(0.0, 0.0)
+          self.resetInitialTicks()
+          i += 1 
+                        
 
       rate.sleep()
 
     self.publishCommand(0.0, 0.0)
+
+    end_time = time.time()
+    print("DONE PROGRAM. Total execution time: ", end_time - self._start_time)
 
   def publishCommand(self, left_vel, right_vel):
     self.msg_wheels_cmd.header.stamp = rospy.Time.now()
