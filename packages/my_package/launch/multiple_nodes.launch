@@ -11,8 +11,8 @@
         <remap from="~/chatter" to="/$(arg veh)/my_publisher_node_2/chatter"/>
     </node> -->
     <!-- <node pkg="my_package" type="my_camera_node.py" name="my_camera_node"  output="screen" /> -->
-    <!-- <node pkg="my_package" type="my_encoder.py" name="my_encoder_node"  output="screen" /> -->
     <node pkg="my_package" type="led_server.py" name="led_server_node"  output="screen" />
-    <node pkg="my_package" type="my_test_client.py" name="led_client_node"  output="screen" />
+    <node pkg="my_package" type="my_encoder.py" name="my_encoder_node"  output="screen" />
+    <!-- <node pkg="my_package" type="my_test_client.py" name="led_client_node"  output="screen" /> -->
   </group>
 </launch>

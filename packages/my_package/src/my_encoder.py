@@ -4,7 +4,10 @@ import os, math
 import rospy
 from duckietown.dtros import DTROS, NodeType, TopicType, DTParam, ParamType
 from duckietown_msgs.msg import Twist2DStamped, WheelEncoderStamped, WheelsCmdStamped
+from duckietown_msgs.srv import SetFSMState
 from std_msgs.msg import Header, Float32
+
+NAME = 'led_server'
 
 class OdometryNode(DTROS):
   def __init__(self, node_name):
@@ -29,9 +32,8 @@ class OdometryNode(DTROS):
     rospy.on_shutdown(self.clean_shutdown)
 
     # Celina's Robot
-    # TODO: add
-    self.right_velocity = 0.4779990613460541
-    self.left_velocity = 0.477044016122818
+    self.right_velocity = 1.5 * 0.4779990613460541
+    self.left_velocity = 1.5 * 0.477044016122818
 
     # Initialize the executed commands message
     self.msg_wheels_cmd = WheelsCmdStamped()
@@ -40,7 +42,7 @@ class OdometryNode(DTROS):
     # Subscribers
     self.sub_encoder_ticks_left = rospy.Subscriber(f"/{self.veh_name}/left_wheel_encoder_node/tick", WheelEncoderStamped, self.left_callback)
     self.sub_encoder_ticks_right = rospy.Subscriber(f"/{self.veh_name}/right_wheel_encoder_node/tick", WheelEncoderStamped, self.right_callback)
-    self.sub_executed_commands = rospy.Subscriber(f'/{self.veh_name}/wheels_driver_node/wheels_cmd_executed', WheelsCmdStamped, self.command_callback)
+    # self.sub_executed_commands = rospy.Subscriber(f'/{self.veh_name}/wheels_driver_node/wheels_cmd_executed', WheelsCmdStamped, self.command_callback)
 
     # Publishers
     self.pub_integrated_distance = rospy.Publisher('distance_travelled', Float32, queue_size=10)
@@ -52,6 +54,11 @@ class OdometryNode(DTROS):
     self.current_ticks_right = 0
 
     self.log("Initialized")
+
+
+    rospy.wait_for_service(NAME)
+    self.change_color = rospy.ServiceProxy(NAME, SetFSMState)
+    self.change_color("white")
   
   def left_callback(self, msg):
     # rospy.loginfo("Left data: %s", msg.data)
@@ -78,35 +85,47 @@ class OdometryNode(DTROS):
     self.publishCommand(0.0, 0.0)
 
   def run(self):
-    # publish 10 messages every second
-    rate = rospy.Rate(10)
-    # state = ["forward", None]
-    state = ["right-turn", "forward", "left-turn", "forward", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn","left-turn", None]
+    rate = rospy.Rate(10) # 10 times a second
+    substate = ["change-color", "right-turn", "forward", "left-turn", "forward", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn","left-turn"]
     i = 0
-    # motion = "forward"
+    state = 1
+    rate_5s = rospy.Rate(0.2) # 5 second rate
     while not rospy.is_shutdown():
-      if state[i] == "forward":
-        if self.distanceTravelled() < 1.1:
-          self.publishCommand(self.left_velocity, self.right_velocity)
-        else:
+      if state == 1:
+        self.change_color("cyan")
+        rate_5s.sleep()
+        state += 1
+      elif state == 2:
+        if i >= len(substate):
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
-          if i < len(state) - 1: i += 1
-      if state[i] == "right-turn":
-        if self.angleTurned() < math.pi/2:
-          self.publishCommand(self.left_velocity, -self.right_velocity)
-        else:
-          self.publishCommand(0.0, 0.0)
-          self.resetInitialTicks()
-          if i < len(state) - 1: i += 1
-      if state[i] == "left-turn":
-        if self.angleTurned() < math.pi/2:
-          self.publishCommand(-self.left_velocity, self.right_velocity)
-        else:
-          self.publishCommand(0.0, 0.0)
-          self.resetInitialTicks()
-          if i < len(state) - 1: i += 1
-      # rospy.loginfo("Publishing command: %s", self.msg_wheels_cmd)
+          self.change_color("cyan")
+          rate_5s.sleep()
+          state += 1
+        elif substate[i] == "change-color":
+          self.change_color("purple")
+          i += 1
+        elif substate[i] == "forward":
+          if self.distanceTravelled() < 1.1:
+            self.publishCommand(self.left_velocity, self.right_velocity)
+          else:
+            self.publishCommand(0.0, 0.0)
+            self.resetInitialTicks()
+            i += 1
+        elif substate[i] == "right-turn":
+          if self.angleTurned() < 1.535:
+            self.publishCommand(self.left_velocity, -self.right_velocity)
+          else:
+            self.publishCommand(0.0, 0.0)
+            self.resetInitialTicks()
+            i += 1
+        elif substate[i] == "left-turn":
+          if self.angleTurned() < 1.545:
+            self.publishCommand(-self.left_velocity, self.right_velocity)
+          else:
+            self.publishCommand(0.0, 0.0)
+            self.resetInitialTicks()
+            i += 1
       rate.sleep()
     self.publishCommand(0.0, 0.0)
 
