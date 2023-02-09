@@ -14,10 +14,31 @@ class LEDClientNode(DTROS):
 
     rospy.wait_for_service(NAME)
 
+    colors = ['red', 'green', 'blue', 'white']
+
     try:
       change_color = rospy.ServiceProxy(NAME, SetFSMState)
-      resp = change_color("purple")
-      print("got result: ", resp)
+
+
+      run = True
+      while run:
+        color = input("Please select your color:")
+        if color == '':
+          run = False
+        else:
+          rospy.loginfo("Sending color: %s", color)
+          change_color(color)
+
+
+      # rate = rospy.Rate(0.5)
+
+
+
+      # for color in colors:
+      #   rospy.loginfo("Sending color: %s", color)
+      #   change_color(color)
+      #   rate.sleep()
+
     except rospy.ServiceException as e:
       print("Service call failed: %s" % e)
 
