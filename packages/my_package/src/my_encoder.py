@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-import numpy as np
-import os, math
+import math
 import rospy
-from duckietown.dtros import DTROS, NodeType, TopicType, DTParam, ParamType
-from duckietown_msgs.msg import Twist2DStamped, WheelEncoderStamped, WheelsCmdStamped
+from duckietown.dtros import DTROS, NodeType
+from duckietown_msgs.msg import WheelEncoderStamped, WheelsCmdStamped
 from duckietown_msgs.srv import SetFSMState
 from std_msgs.msg import Header, Float32
 
@@ -19,6 +18,8 @@ class OdometryNode(DTROS):
     # Initialize the DTROS parent class
     super(OdometryNode, self).__init__(node_name=node_name, node_type=NodeType.PERCEPTION)
     self.veh_name = rospy.get_namespace().strip("/")
+
+    self._state_color = {1: "cyan", 2: "purple", 3: "yellow", 4: "green"}
 
     # Get static parameters
     self._radius = rospy.get_param(f'/{self.veh_name}/kinematics_node/radius', 100)
@@ -59,7 +60,7 @@ class OdometryNode(DTROS):
     rospy.wait_for_service(NAME)
     self.change_color = rospy.ServiceProxy(NAME, SetFSMState)
     self.change_color("white")
-  
+
   def left_callback(self, msg):
     # rospy.loginfo("Left data: %s", msg.data)
     self.current_ticks_left = msg.data
@@ -86,47 +87,52 @@ class OdometryNode(DTROS):
 
   def run(self):
     rate = rospy.Rate(10) # 10 times a second
-    substate = ["change-color", "right-turn", "forward", "left-turn", "forward", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn","left-turn"]
+    tasks = ["state-1", "state-2", "right-turn", "forward", "left-turn", "forward", "state-1", "state-3", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn","left-turn", "state-1"]
     i = 0
-    state = 1
+
     rate_5s = rospy.Rate(0.2) # 5 second rate
     while not rospy.is_shutdown():
-      if state == 1:
-        self.change_color("cyan")
-        rate_5s.sleep()
-        state += 1
-      elif state == 2:
-        if i >= len(substate):
+      if tasks[i] == "state-1":
+        self.publishCommand(0.0, 0.0)
+        self.resetInitialTicks()        
+        self.change_color(self._state_color[1])
+        rate_5s.sleep()        
+        i += 1
+
+      elif tasks[i] == "state-2":
+        self.change_color(self._state_color[2])
+        i += 1
+
+      elif tasks[i] == "state-3":
+        self.change_color(self._state_color[3])
+        i += 1
+
+      elif tasks[i] == "forward":
+        if self.distanceTravelled() < 1.1:
+          self.publishCommand(self.left_velocity, self.right_velocity)
+        else:
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
-          self.change_color("cyan")
-          rate_5s.sleep()
-          state += 1
-        elif substate[i] == "change-color":
-          self.change_color("purple")
           i += 1
-        elif substate[i] == "forward":
-          if self.distanceTravelled() < 1.1:
-            self.publishCommand(self.left_velocity, self.right_velocity)
-          else:
-            self.publishCommand(0.0, 0.0)
-            self.resetInitialTicks()
-            i += 1
-        elif substate[i] == "right-turn":
-          if self.angleTurned() < 1.535:
-            self.publishCommand(self.left_velocity, -self.right_velocity)
-          else:
-            self.publishCommand(0.0, 0.0)
-            self.resetInitialTicks()
-            i += 1
-        elif substate[i] == "left-turn":
-          if self.angleTurned() < 1.545:
-            self.publishCommand(-self.left_velocity, self.right_velocity)
-          else:
-            self.publishCommand(0.0, 0.0)
-            self.resetInitialTicks()
-            i += 1
+
+      elif tasks[i] == "right-turn":
+        if self.angleTurned() < 1.535:
+          self.publishCommand(self.left_velocity, -self.right_velocity)
+        else:
+          self.publishCommand(0.0, 0.0)
+          self.resetInitialTicks()
+          i += 1
+      
+      elif tasks[i] == "left-turn":
+        if self.angleTurned() < 1.545:
+          self.publishCommand(-self.left_velocity, self.right_velocity)
+        else:
+          self.publishCommand(0.0, 0.0)
+          self.resetInitialTicks()
+          i += 1      
+
       rate.sleep()
+
     self.publishCommand(0.0, 0.0)
 
   def publishCommand(self, left_vel, right_vel):
