@@ -94,9 +94,6 @@ class OdometryNode(DTROS):
       "state-3", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn","left-turn",
       "state-1", "state-4", "circular-turn"]
 
-    # tasks = ["state-2", "right-turn", "forward"]
-
-    # tasks = ["circular-turn"]
     i = 0
 
     rate_5s = rospy.Rate(0.2) # 5 second rate
