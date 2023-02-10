@@ -63,7 +63,7 @@ class OdometryNode(DTROS):
 
     self.bag = rosbag.Bag('test.bag', 'w')
     self.bag_string = String()
-    self.position = {'x': 0.32, 'y': 0.32, 'theta': 0}
+    self.position = {'x': 0.32, 'y': 0.32, 'theta': math.pi/2}
 
   def left_callback(self, msg):
     # rospy.loginfo("Left data: %s", msg.data)
@@ -87,9 +87,9 @@ class OdometryNode(DTROS):
       rate.sleep()
 
   def writeOdometryInformation(self, dA, dTheta):
+    self.position['theta'] = (self.position['theta'] - dTheta) % math.pi
     self.position['x'] += dA * math.cos(self.position['theta'])
     self.position['y'] += dA * math.sin(self.position['theta'])
-    self.position['theta'] += dTheta
     self.bag_string.data = f"({self.position['x']}, {self.position['y']}, {self.position['theta']})"
     print(f"({self.position['x']}, {self.position['y']}, {self.position['theta']})")
     self.bag.write('odometry', self.bag_string)
@@ -99,7 +99,7 @@ class OdometryNode(DTROS):
     self.publishCommand(0.0, 0.0)
 
   def run(self):
-    rate = rospy.Rate(10) # 10 times a second
+    rate = rospy.Rate(20) # 10 times a second
     tasks = [
       # 2
       "state-1",
@@ -137,16 +137,18 @@ class OdometryNode(DTROS):
         if self.distanceTravelled() < 1.1:
           self.publishCommand(self.left_velocity, self.right_velocity)
         else:
+          # self.writeOdometryInformation(self.distanceTravelled(), 0)
           self.writeOdometryInformation(self.distanceTravelled(), 0)
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
           i += 1
 
       elif tasks[i] == "right-turn":
-        if self.angleTurned() < 1.53:
+        if self.angleTurned() > -1.53:
           self.publishCommand(self.left_velocity, -self.right_velocity)
         else:
-          self.writeOdometryInformation(0, -self.angleTurned())
+          # self.writeOdometryInformation(0, -self.angleTurned())
+          self.writeOdometryInformation(0, self.angleTurned())
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
           i += 1
@@ -155,20 +157,23 @@ class OdometryNode(DTROS):
         if self.angleTurned() < 1.545:
           self.publishCommand(-self.left_velocity, self.right_velocity)
         else:
+          # self.writeOdometryInformation(0, self.angleTurned())
           self.writeOdometryInformation(0, self.angleTurned())
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
           i += 1
 
       elif tasks[i] == "circular-turn":
-        if self.distanceTravelled() < 3.5:
+        if self.angleTurned() > -2*math.pi:
+          # print(self.angleTurned())
           self.publishCommand(self.left_velocity, self.right_velocity  * 0.7)
         else:
+          # self.writeOdometryInformation(self.distanceTravelled(), self.angleTurned())
           self.writeOdometryInformation(self.distanceTravelled(), self.angleTurned())
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
           i += 1 
-
+      
       rate.sleep()
 
     self.publishCommand(0.0, 0.0)
@@ -203,7 +208,7 @@ class OdometryNode(DTROS):
     return (self.distanceTravelledRight() + self.distanceTravelledLeft()) / 2
   
   def angleTurned(self):
-    return abs(self.distanceTravelledRight() - self.distanceTravelledLeft()) / (2 * self._L)
+    return (self.distanceTravelledRight() - self.distanceTravelledLeft()) / (2 * self._L)
   
 if __name__ == '__main__':
   node = OdometryNode(node_name='my_encoder_node')
