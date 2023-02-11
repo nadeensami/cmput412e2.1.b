@@ -21,6 +21,8 @@ class OdometryNode(DTROS):
     super(OdometryNode, self).__init__(node_name=node_name, node_type=NodeType.PERCEPTION)
     self.veh_name = rospy.get_namespace().strip("/")
 
+    self.file = open("/data/bags/odometry.txt", "w")
+
     self._state_color = {1: "cyan", 2: "purple", 3: "yellow", 4: "green"}
 
     # Static parameters
@@ -71,9 +73,10 @@ class OdometryNode(DTROS):
     self.change_color = rospy.ServiceProxy(NAME, SetFSMState)
     self.change_color("white")
 
-    self.bag = rosbag.Bag('/data/bags/odometry.bag', 'w')
+    self.bag = rosbag.Bag('/data/bags/odometry-feb-11.bag', 'w')
     self.bag_string = String()
     self.position = {'x': 0.32, 'y': 0.32, 'theta': math.pi/2}
+    self.closed_file = False
 
     '''
       Constants for self.ticks_per_meter and self.encoder_stale_dt taken from "jihoonog/CMPUT-503-Exercise-2"
@@ -120,13 +123,18 @@ class OdometryNode(DTROS):
 
   def writeOdometryInformation(self, x, y, theta):
     self.bag_string.data = f"({x}, {y}, {theta})"
-    print(f"({x}, {y}, {theta})")
-    self.bag.write('odometry', self.bag_string)
+    
+    if not self.closed_file:
+      print(f"({x}, {y}, {theta})")      
+      self.bag.write('odometry', self.bag_string)
+      self.file.write(f"({x}, {y}, {theta})\n")
 
   def clean_shutdown(self):
     self.change_color("off")
     self.publishCommand(0.0, 0.0)
     self.bag.close()
+    self.file.close()
+    self.closed_file = True
 
   def run(self):
     rate = rospy.Rate(10) # 10 times a second
@@ -172,7 +180,7 @@ class OdometryNode(DTROS):
           i += 1
 
       elif tasks[i] == "right-turn":
-        if self.angleTurned() > -1.51:  # a little less than pi/2 (90 degree turn)
+        if self.angleTurned() > -1.53:  # a little less than pi/2 (90 degree turn)
           self.publishCommand(self.left_velocity, -self.right_velocity)
         else:
           self.publishCommand(0.0, 0.0)
@@ -180,7 +188,7 @@ class OdometryNode(DTROS):
           i += 1
       
       elif tasks[i] == "left-turn":
-        if self.angleTurned() < 1.53:  # a little less than pi/2 (90 degree turn)
+        if self.angleTurned() < 1.54:  # a little less than pi/2 (90 degree turn)
           self.publishCommand(-self.left_velocity, self.right_velocity)
         else:
           self.publishCommand(0.0, 0.0)
@@ -189,7 +197,7 @@ class OdometryNode(DTROS):
 
       elif tasks[i] == "circular-turn":
         if self.angleTurned() > -5.8:  # a little less than 2*pi
-          self.publishCommand(self.left_velocity, self.right_velocity  * 0.5)
+          self.publishCommand(self.left_velocity, self.right_velocity  * 0.6)
         else:
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
@@ -198,6 +206,8 @@ class OdometryNode(DTROS):
       rate.sleep()
 
     self.publishCommand(0.0, 0.0)
+
+    self.closed_file = True
 
     end_time = time.time()
     # 8
