@@ -126,6 +126,7 @@ class OdometryNode(DTROS):
   def clean_shutdown(self):
     self.change_color("off")
     self.publishCommand(0.0, 0.0)
+    self.bag.close()
 
   def run(self):
     rate = rospy.Rate(10) # 10 times a second
