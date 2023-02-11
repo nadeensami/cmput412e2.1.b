@@ -4,6 +4,7 @@ from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import WheelEncoderStamped, WheelsCmdStamped
 from duckietown_msgs.srv import SetFSMState
 from std_msgs.msg import Header, Float32, String
+import message_filters
 
 NAME = 'led_server'
 
@@ -22,8 +23,8 @@ class OdometryNode(DTROS):
 
     self._state_color = {1: "cyan", 2: "purple", 3: "yellow", 4: "green"}
 
-    # Get static parameters
-    self._radius = rospy.get_param(f'/{self.veh_name}/kinematics_node/radius', 100)
+    # Static parameters
+    self._radius = 0.0318
     self._total_ticks = 135
     self._L = 0.05
 
@@ -42,13 +43,22 @@ class OdometryNode(DTROS):
     self.msg_wheels_cmd.header = Header()
 
     # Subscribers
-    self.sub_encoder_ticks_left = rospy.Subscriber(f"/{self.veh_name}/left_wheel_encoder_node/tick", WheelEncoderStamped, self.left_callback)
-    self.sub_encoder_ticks_right = rospy.Subscriber(f"/{self.veh_name}/right_wheel_encoder_node/tick", WheelEncoderStamped, self.right_callback)
-    # self.sub_executed_commands = rospy.Subscriber(f'/{self.veh_name}/wheels_driver_node/wheels_cmd_executed', WheelsCmdStamped, self.command_callback)
+    self.sub_encoder_ticks_left = message_filters.Subscriber(f"/{self.veh_name}/left_wheel_encoder_node/tick", WheelEncoderStamped)
+    self.sub_encoder_ticks_right = message_filters.Subscriber(f"/{self.veh_name}/right_wheel_encoder_node/tick", WheelEncoderStamped)
+
+    self.sub_encoder_ticks_left.registerCallback(self.left_callback)
+    self.sub_encoder_ticks_right.registerCallback(self.right_callback)
 
     # Publishers
     self.pub_integrated_distance = rospy.Publisher('distance_travelled', Float32, queue_size=10)
     self.pub_wheel_command = rospy.Publisher(f'/{self.veh_name}/wheels_driver_node/wheels_cmd', WheelsCmdStamped, queue_size=10)
+
+    # Setup the time synchronizer
+    self.ts_encoders = message_filters.ApproximateTimeSynchronizer(
+      [self.sub_encoder_ticks_left, self.sub_encoder_ticks_right], 10, 0.5
+    )
+
+    self.ts_encoders.registerCallback(self.cb_ts_encoders)
 
     self.initial_ticks_left = -1
     self.current_ticks_left = 0
@@ -61,9 +71,31 @@ class OdometryNode(DTROS):
     self.change_color = rospy.ServiceProxy(NAME, SetFSMState)
     self.change_color("white")
 
-    self.bag = rosbag.Bag('test.bag', 'w')
+    self.bag = rosbag.Bag('/data/bags/odometry.bag', 'w')
     self.bag_string = String()
     self.position = {'x': 0.32, 'y': 0.32, 'theta': math.pi/2}
+
+    '''
+      Constants for self.ticks_per_meter and self.encoder_stale_dt taken from "jihoonog/CMPUT-503-Exercise-2"
+      link: https://github.com/jihoonog/CMPUT-503-Exercise-2/blob/561e08a558a95b95e2c01dd21c2394f2f9b4fb34/packages/exercise-2/src/motor_control_node.py
+      AUTHORS: Jihoon Og, Qianxi Li
+    '''
+    self.ticks_per_meter = 656
+    self.encoder_stale_dt = 1.0
+
+    self.left_encoder_last = None
+    self.right_encoder_last = None
+    self.encoders_timestamp_last = None
+    self.encoders_timestamp_last_local = None
+
+    self.timestamp = None
+    # initial coordinates according to exercise instructions are
+    # (0.32, 0.32), with theta = pi/2
+    self.x = 0.32
+    self.y = 0.32
+    self.yaw = math.pi/2
+    self.tv = 0.0
+    self.rv = 0.0
 
   def left_callback(self, msg):
     # rospy.loginfo("Left data: %s", msg.data)
@@ -86,12 +118,9 @@ class OdometryNode(DTROS):
       self.pub_integrated_distance.publish(self.distanceTravelled())
       rate.sleep()
 
-  def writeOdometryInformation(self, dA, dTheta):
-    self.position['theta'] = (self.position['theta'] - dTheta) % math.pi
-    self.position['x'] += dA * math.cos(self.position['theta'])
-    self.position['y'] += dA * math.sin(self.position['theta'])
-    self.bag_string.data = f"({self.position['x']}, {self.position['y']}, {self.position['theta']})"
-    print(f"({self.position['x']}, {self.position['y']}, {self.position['theta']})")
+  def writeOdometryInformation(self, x, y, theta):
+    self.bag_string.data = f"({x}, {y}, {theta})"
+    print(f"({x}, {y}, {theta})")
     self.bag.write('odometry', self.bag_string)
 
   def clean_shutdown(self):
@@ -99,19 +128,19 @@ class OdometryNode(DTROS):
     self.publishCommand(0.0, 0.0)
 
   def run(self):
-    rate = rospy.Rate(20) # 10 times a second
+    rate = rospy.Rate(10) # 10 times a second
     tasks = [
-      # 2
+      # Step 2
       "state-1",
-      # 3
+      # Step 3
       "state-2", "right-turn", "forward", "left-turn", "forward",
-      # 4
+      # Step 4
       "state-1",
-      # 5
+      # Step 5
       "state-3", "left-turn", "forward", "left-turn", "forward", "left-turn", "left-turn", "left-turn",
-      # 6
+      # Step 6
       "state-1",
-      # 7
+      # Step 7
       "state-4", "circular-turn"
     ]
     i = 0
@@ -137,39 +166,30 @@ class OdometryNode(DTROS):
         if self.distanceTravelled() < 1.1:
           self.publishCommand(self.left_velocity, self.right_velocity)
         else:
-          # self.writeOdometryInformation(self.distanceTravelled(), 0)
-          self.writeOdometryInformation(self.distanceTravelled(), 0)
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
           i += 1
 
       elif tasks[i] == "right-turn":
-        if self.angleTurned() > -1.53:
+        if self.angleTurned() > -1.51:  # a little less than pi/2 (90 degree turn)
           self.publishCommand(self.left_velocity, -self.right_velocity)
         else:
-          # self.writeOdometryInformation(0, -self.angleTurned())
-          self.writeOdometryInformation(0, self.angleTurned())
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
           i += 1
       
       elif tasks[i] == "left-turn":
-        if self.angleTurned() < 1.545:
+        if self.angleTurned() < 1.53:  # a little less than pi/2 (90 degree turn)
           self.publishCommand(-self.left_velocity, self.right_velocity)
         else:
-          # self.writeOdometryInformation(0, self.angleTurned())
-          self.writeOdometryInformation(0, self.angleTurned())
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
           i += 1
 
       elif tasks[i] == "circular-turn":
-        if self.angleTurned() > -2*math.pi:
-          # print(self.angleTurned())
-          self.publishCommand(self.left_velocity, self.right_velocity  * 0.7)
+        if self.angleTurned() > -5.8:  # a little less than 2*pi
+          self.publishCommand(self.left_velocity, self.right_velocity  * 0.5)
         else:
-          # self.writeOdometryInformation(self.distanceTravelled(), self.angleTurned())
-          self.writeOdometryInformation(self.distanceTravelled(), self.angleTurned())
           self.publishCommand(0.0, 0.0)
           self.resetInitialTicks()
           i += 1 
@@ -209,7 +229,88 @@ class OdometryNode(DTROS):
   
   def angleTurned(self):
     return (self.distanceTravelledRight() - self.distanceTravelledLeft()) / (2 * self._L)
-  
+
+  '''
+    Code for functions cb_ts_encoders(), cb_timer(), angle_clamp() taken from
+    "duckietown/dt-core", file "deadreckoning_node.py"
+    Link: https://github.com/duckietown/dt-core/blob/daffy/packages/deadreckoning/src/deadreckoning_node.py
+    AUTHORS: Matthew Walter, Andrea F Daniele, Andrea Censi
+  '''
+  def cb_ts_encoders(self, left_encoder, right_encoder):
+    timestamp_now = rospy.get_time()
+
+    # Use the average of the two encoder times as the timestamp
+    left_encoder_timestamp = left_encoder.header.stamp.to_sec()
+    right_encoder_timestamp = right_encoder.header.stamp.to_sec()
+    timestamp = (left_encoder_timestamp + right_encoder_timestamp) / 2
+
+    if not self.left_encoder_last:
+      self.left_encoder_last = left_encoder
+      self.right_encoder_last = right_encoder
+      self.encoders_timestamp_last = timestamp
+      self.encoders_timestamp_last_local = timestamp_now
+      return
+
+    # Skip this message if the time synchronizer gave us an older message
+    dtl = left_encoder.header.stamp - self.left_encoder_last.header.stamp
+    dtr = right_encoder.header.stamp - self.right_encoder_last.header.stamp
+    if dtl.to_sec() < 0 or dtr.to_sec() < 0:
+      rospy.logwarn("Ignoring stale encoder message")
+      return
+
+    left_dticks = left_encoder.data - self.left_encoder_last.data
+    right_dticks = right_encoder.data - self.right_encoder_last.data
+
+    left_distance = left_dticks * 1.0 / self.ticks_per_meter
+    right_distance = right_dticks * 1.0 / self.ticks_per_meter
+
+    # Displacement in body-relative x-direction
+    distance = (left_distance + right_distance) / 2
+
+    # Change in heading
+    dyaw = (right_distance - left_distance) / (2 * self._L)
+
+    dt = timestamp - self.encoders_timestamp_last
+
+    if dt < 1e-6:
+      rospy.logwarn("Time since last encoder message (%f) is too small. Ignoring" % dt)
+      return
+
+    self.tv = distance / dt
+    self.rv = dyaw / dt
+
+    self.yaw = self.angle_clamp(self.yaw + dyaw)
+    self.x = self.x + distance * math.cos(self.yaw)
+    self.y = self.y + distance * math.sin(self.yaw)
+    self.timestamp = timestamp
+
+    self.left_encoder_last = left_encoder
+    self.right_encoder_last = right_encoder
+    self.encoders_timestamp_last = timestamp
+    self.encoders_timestamp_last_local = timestamp_now
+
+    # Write odometry to bag
+    self.writeOdometryInformation(self.x, self.y, self.yaw)    
+
+  def cb_timer(self, _):
+    if self.encoders_timestamp_last:
+      dt = rospy.get_time() - self.encoders_timestamp_last_local
+      if abs(dt) > self.encoder_stale_dt:
+        self.rv = 0.0
+        self.tv = 0.0
+    else:
+      self.rv = 0.0
+      self.tv = 0.0
+
+  @staticmethod
+  def angle_clamp(theta):
+    if theta > 2 * math.pi:
+      return theta - 2 * math.pi
+    elif theta < -2 * math.pi:
+      return theta + 2 * math.pi
+    else:
+      return theta
+
 if __name__ == '__main__':
   node = OdometryNode(node_name='my_encoder_node')
   # Run the node
