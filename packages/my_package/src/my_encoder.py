@@ -208,7 +208,9 @@ class OdometryNode(DTROS):
     self.publishCommand(0.0, 0.0)
 
     self.closed_file = True
-
+    self.bag.close()
+    self.file.close()
+    
     end_time = time.time()
     # 8
     print("DONE PROGRAM. Total execution time: ", end_time - self._start_time)
