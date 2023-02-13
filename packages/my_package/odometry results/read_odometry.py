@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-file = open("odometry-2.txt", "r")
+file = open("odometry-4.txt", "r")
 
 x = []
 y = []

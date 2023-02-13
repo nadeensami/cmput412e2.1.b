@@ -14,27 +14,20 @@ class OdometryNode(DTROS):
     Wheel Encoder Node
     This implements basic functionality with the wheel encoders.
     """
-    # Initialize start time
-    self._start_time = time.time()
-
     # Initialize the DTROS parent class
     super(OdometryNode, self).__init__(node_name=node_name, node_type=NodeType.PERCEPTION)
     self.veh_name = rospy.get_namespace().strip("/")
-
-    self.file = open("/data/bags/odometry.txt", "w")
-
-    self._state_color = {1: "cyan", 2: "purple", 3: "yellow", 4: "green"}
+    rospy.on_shutdown(self.clean_shutdown)
 
     # Static parameters
     self._radius = 0.0318
     self._total_ticks = 135
     self._L = 0.05
+    self._ticks_per_meter = self._total_ticks / (2 * math.pi * self._radius)
 
     # Nadeen's Robot
     # self.right_velocity = 0.4297693967819214
     # self.left_velocity = 0.5252736806869507
-
-    rospy.on_shutdown(self.clean_shutdown)
 
     # Celina's Robot
     self.right_velocity = 1.5 * 0.4779990613460541
@@ -44,54 +37,46 @@ class OdometryNode(DTROS):
     self.msg_wheels_cmd = WheelsCmdStamped()
     self.msg_wheels_cmd.header = Header()
 
+    '''
+    Code for setting up time synchronizers from
+    "duckietown/dt-core", file "deadreckoning_node.py"
+    Link: https://github.com/duckietown/dt-core/blob/daffy/packages/deadreckoning/src/deadreckoning_node.py
+    AUTHORS: Matthew Walter, Andrea F Daniele, Andrea Censi
+    '''
     # Subscribers
     self.sub_encoder_ticks_left = message_filters.Subscriber(f"/{self.veh_name}/left_wheel_encoder_node/tick", WheelEncoderStamped)
     self.sub_encoder_ticks_right = message_filters.Subscriber(f"/{self.veh_name}/right_wheel_encoder_node/tick", WheelEncoderStamped)
-
-    self.sub_encoder_ticks_left.registerCallback(self.left_callback)
-    self.sub_encoder_ticks_right.registerCallback(self.right_callback)
+    # Setup the time synchronizer
+    self.ts_encoders = message_filters.ApproximateTimeSynchronizer(
+      [self.sub_encoder_ticks_left, self.sub_encoder_ticks_right], 10, 0.5
+    )
+    self.ts_encoders.registerCallback(self.cb_ts_encoders)
 
     # Publishers
     self.pub_integrated_distance = rospy.Publisher('distance_travelled', Float32, queue_size=10)
     self.pub_wheel_command = rospy.Publisher(f'/{self.veh_name}/wheels_driver_node/wheels_cmd', WheelsCmdStamped, queue_size=10)
 
-    # Setup the time synchronizer
-    self.ts_encoders = message_filters.ApproximateTimeSynchronizer(
-      [self.sub_encoder_ticks_left, self.sub_encoder_ticks_right], 10, 0.5
-    )
-
-    self.ts_encoders.registerCallback(self.cb_ts_encoders)
-
-    self.initial_ticks_left = -1
-    self.current_ticks_left = 0
-    self.initial_ticks_right = -1
-    self.current_ticks_right = 0
-
-    self.log("Initialized")
-
+    # Set up service
     rospy.wait_for_service(NAME)
     self.change_color = rospy.ServiceProxy(NAME, SetFSMState)
     self.change_color("white")
 
+    # Set up bag for writing
     self.bag = rosbag.Bag('/data/bags/odometry-feb-11.bag', 'w')
+    self.file = open("/data/bags/odometry.txt", "w")
     self.bag_string = String()
     self.position = {'x': 0.32, 'y': 0.32, 'theta': math.pi/2}
     self.closed_file = False
 
-    '''
-      Constants for self.ticks_per_meter and self.encoder_stale_dt taken from "jihoonog/CMPUT-503-Exercise-2"
-      link: https://github.com/jihoonog/CMPUT-503-Exercise-2/blob/561e08a558a95b95e2c01dd21c2394f2f9b4fb34/packages/exercise-2/src/motor_control_node.py
-      AUTHORS: Jihoon Og, Qianxi Li
-    '''
-    self.ticks_per_meter = 656
-    self.encoder_stale_dt = 1.0
-
+    # Initialize other variables that we'll use
     self.left_encoder_last = None
+    self.reference_left_encoder = None
     self.right_encoder_last = None
+    self.reference_right_encoder = None
     self.encoders_timestamp_last = None
     self.encoders_timestamp_last_local = None
-
     self.timestamp = None
+
     # initial coordinates according to exercise instructions are
     # (0.32, 0.32), with theta = pi/2
     self.x = 0.32
@@ -99,16 +84,6 @@ class OdometryNode(DTROS):
     self.yaw = math.pi/2
     self.tv = 0.0
     self.rv = 0.0
-
-  def left_callback(self, msg):
-    # rospy.loginfo("Left data: %s", msg.data)
-    self.current_ticks_left = msg.data
-    if self.initial_ticks_left < 0: self.initial_ticks_left = msg.data # set initial ticks if uninitialized
-
-  def right_callback(self, msg):
-    # rospy.loginfo("Right data: %s", msg.data)
-    self.current_ticks_right = msg.data
-    if self.initial_ticks_right < 0: self.initial_ticks_right = msg.data # set initial ticks if uninitialized
 
   def command_callback(self, data):
     rospy.loginfo("Left velocity data: %s", data.vel_left)
@@ -137,6 +112,10 @@ class OdometryNode(DTROS):
     self.closed_file = True
 
   def run(self):
+    # Initialize start time
+    self._start_time = time.time()
+    self._state_color = {1: "cyan", 2: "purple", 3: "yellow", 4: "green"}
+
     rate = rospy.Rate(10) # 10 times a second
     tasks = [
       # Step 2
@@ -176,23 +155,25 @@ class OdometryNode(DTROS):
           self.publishCommand(self.left_velocity, self.right_velocity)
         else:
           self.publishCommand(0.0, 0.0)
-          self.resetInitialTicks()
+          self.resetReferenceTicks()
           i += 1
 
       elif tasks[i] == "right-turn":
+        # if self.angleTurned() > -math.pi/2:  # a little less than pi/2 (90 degree turn)
         if self.angleTurned() > -1.53:  # a little less than pi/2 (90 degree turn)
           self.publishCommand(self.left_velocity, -self.right_velocity)
         else:
           self.publishCommand(0.0, 0.0)
-          self.resetInitialTicks()
+          self.resetReferenceTicks()
           i += 1
       
       elif tasks[i] == "left-turn":
-        if self.angleTurned() < 1.54:  # a little less than pi/2 (90 degree turn)
+        # if self.angleTurned() < math.pi/2:  # a little less than pi/2 (90 degree turn)
+        if self.angleTurned() < 1.52:  # a little less than pi/2 (90 degree turn)
           self.publishCommand(-self.left_velocity, self.right_velocity)
         else:
           self.publishCommand(0.0, 0.0)
-          self.resetInitialTicks()
+          self.resetReferenceTicks()
           i += 1
 
       elif tasks[i] == "circular-turn":
@@ -200,19 +181,22 @@ class OdometryNode(DTROS):
           self.publishCommand(self.left_velocity, self.right_velocity  * 0.6)
         else:
           self.publishCommand(0.0, 0.0)
-          self.resetInitialTicks()
+          self.resetReferenceTicks()
           i += 1 
       
       rate.sleep()
 
+    # Turn off lights and stop wheels
+    self.change_color("off")
     self.publishCommand(0.0, 0.0)
 
+    # Write metrics
     self.closed_file = True
     self.bag.close()
     self.file.close()
     
+    # 8. Write total time for task execution
     end_time = time.time()
-    # 8
     print("DONE PROGRAM. Total execution time: ", end_time - self._start_time)
 
   def publishCommand(self, left_vel, right_vel):
@@ -222,20 +206,20 @@ class OdometryNode(DTROS):
     self.pub_wheel_command.publish(self.msg_wheels_cmd)
 
   def distanceTravelledRight(self):
-    return 2 * math.pi * self._radius * (self.current_ticks_right - self.initial_ticks_right) / self._total_ticks
+    return 2 * math.pi * self._radius * (self.right_encoder_last.data - self.reference_right_encoder.data) / self._total_ticks
   
-  def resetInitialRightTicks(self):
-    self.initial_ticks_right = self.current_ticks_right
+  def resetReferenceRightTicks(self):
+    self.reference_right_encoder = self.right_encoder_last
   
   def distanceTravelledLeft(self):
-    return 2 * math.pi * self._radius * (self.current_ticks_left - self.initial_ticks_left) / self._total_ticks
+    return 2 * math.pi * self._radius * (self.left_encoder_last.data - self.reference_left_encoder.data) / self._total_ticks
   
-  def resetInitialLeftTicks(self):
-    self.initial_ticks_left = self.current_ticks_left
+  def resetReferenceLeftTicks(self):
+    self.reference_left_encoder = self.left_encoder_last
 
-  def resetInitialTicks(self):
-    self.resetInitialLeftTicks()
-    self.resetInitialRightTicks()
+  def resetReferenceTicks(self):
+    self.resetReferenceLeftTicks()
+    self.resetReferenceRightTicks()
   
   def distanceTravelled(self):
     return (self.distanceTravelledRight() + self.distanceTravelledLeft()) / 2
@@ -244,10 +228,10 @@ class OdometryNode(DTROS):
     return (self.distanceTravelledRight() - self.distanceTravelledLeft()) / (2 * self._L)
 
   '''
-    Code for functions cb_ts_encoders(), cb_timer(), angle_clamp() taken from
-    "duckietown/dt-core", file "deadreckoning_node.py"
-    Link: https://github.com/duckietown/dt-core/blob/daffy/packages/deadreckoning/src/deadreckoning_node.py
-    AUTHORS: Matthew Walter, Andrea F Daniele, Andrea Censi
+  Code for functions cb_ts_encoders(), angle_clamp() taken from
+  "duckietown/dt-core", file "deadreckoning_node.py"
+  Link: https://github.com/duckietown/dt-core/blob/daffy/packages/deadreckoning/src/deadreckoning_node.py
+  AUTHORS: Matthew Walter, Andrea F Daniele, Andrea Censi
   '''
   def cb_ts_encoders(self, left_encoder, right_encoder):
     timestamp_now = rospy.get_time()
@@ -257,25 +241,32 @@ class OdometryNode(DTROS):
     right_encoder_timestamp = right_encoder.header.stamp.to_sec()
     timestamp = (left_encoder_timestamp + right_encoder_timestamp) / 2
 
+    # For the first time that we receive a message
     if not self.left_encoder_last:
       self.left_encoder_last = left_encoder
+      self.reference_left_encoder = left_encoder
       self.right_encoder_last = right_encoder
+      self.reference_right_encoder = right_encoder
       self.encoders_timestamp_last = timestamp
       self.encoders_timestamp_last_local = timestamp_now
       return
 
-    # Skip this message if the time synchronizer gave us an older message
+    # Get down time from encoders between last message and current message
     dtl = left_encoder.header.stamp - self.left_encoder_last.header.stamp
     dtr = right_encoder.header.stamp - self.right_encoder_last.header.stamp
+
+    # Skip this message if the time synchronizer gave us an older message
     if dtl.to_sec() < 0 or dtr.to_sec() < 0:
-      rospy.logwarn("Ignoring stale encoder message")
+      # Ignoring stale encoder message
       return
 
+    # Get the difference in ticks
     left_dticks = left_encoder.data - self.left_encoder_last.data
     right_dticks = right_encoder.data - self.right_encoder_last.data
 
-    left_distance = left_dticks * 1.0 / self.ticks_per_meter
-    right_distance = right_dticks * 1.0 / self.ticks_per_meter
+    # Use kinematics to calculate the distances
+    left_distance = left_dticks * 1.0 / self._ticks_per_meter
+    right_distance = right_dticks * 1.0 / self._ticks_per_meter
 
     # Displacement in body-relative x-direction
     distance = (left_distance + right_distance) / 2
@@ -284,11 +275,11 @@ class OdometryNode(DTROS):
     dyaw = (right_distance - left_distance) / (2 * self._L)
 
     dt = timestamp - self.encoders_timestamp_last
-
     if dt < 1e-6:
-      rospy.logwarn("Time since last encoder message (%f) is too small. Ignoring" % dt)
+      # Ignoring if time since last encoder message is too small
       return
 
+    # Set actual translational and rotational velocities from readings
     self.tv = distance / dt
     self.rv = dyaw / dt
 
@@ -297,23 +288,14 @@ class OdometryNode(DTROS):
     self.y = self.y + distance * math.sin(self.yaw)
     self.timestamp = timestamp
 
+    # Set last variables to be current
     self.left_encoder_last = left_encoder
     self.right_encoder_last = right_encoder
     self.encoders_timestamp_last = timestamp
     self.encoders_timestamp_last_local = timestamp_now
 
     # Write odometry to bag
-    self.writeOdometryInformation(self.x, self.y, self.yaw)    
-
-  def cb_timer(self, _):
-    if self.encoders_timestamp_last:
-      dt = rospy.get_time() - self.encoders_timestamp_last_local
-      if abs(dt) > self.encoder_stale_dt:
-        self.rv = 0.0
-        self.tv = 0.0
-    else:
-      self.rv = 0.0
-      self.tv = 0.0
+    self.writeOdometryInformation(self.x, self.y, self.yaw)
 
   @staticmethod
   def angle_clamp(theta):
