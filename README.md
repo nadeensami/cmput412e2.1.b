@@ -1,47 +1,41 @@
-# Template: template-ros
+# Exercise 2: ROS Development and Kinematics
 
-This template provides a boilerplate repository
-for developing ROS-based software in Duckietown.
+This repository contains implementation solutions for exercise 2. For information about the project, please read the report at: [insert report here]
 
-**NOTE:** If you want to develop software that does not use
-ROS, check out [this template](https://github.com/duckietown/template-basic).
+## Structure
 
-## How to use it
+Most of the source code is in the `packages/mypackage/src` directory. Here is a brief description of each file:
 
-### 1. Fork this repository
+- `led_server.py`: Implements a node that starts up an LED server. This service changes the color of the LED lights according to a string message containing the color.
+- `my_camera_node.py`: Implements a node that subscribes to the Duckietown topic where the camera feed is continuously published to, then republishes that image to a custom topic.
+- `my_encoder.py`: Implements the multi-state task from part 2. Contains a node that subscribes to wheel encoders, transforms that information using kinematics, and uses that to accomplish the tasks specified in part 2 by publishing velocities to a topic that commands the wheels using those velocities. It also sends messages to the LED service defined in `led_server.py` to change the color of the LEDs.
+- `my_publisher.py`: A simple publisher node that publishes a message containing the robot's host name every second.
+- `my_subscriber.py`: A simple subscriber node, counterpart to `my_publisher.py`, that subscribes to that node and echoes the data it receives.
+- `my_test_client.py`: A simple client for the service defined by `led_server.py` that reads from the terminal and requests the server to turn the LEDs that colour.
 
-Use the fork button in the top-right corner of the github page to fork this template repository.
+The results from various odometry readings, as well as a simple program to plot them, is in the `packages/mypackage/odometry_readings` directory.
 
-### 2. Create a new repository
+## Execution:
 
-Create a new repository on github.com while
-specifying the newly forked template repository as
-a template for your new repository.
+To execute this project, comment/uncomment the nodes you would like to launch in the `packages/mypackage/launch/multiple_nodes.py` launch file. Currently, it is set to start an LED service, as well as a node that implements the Multi-State task from part 2. To run the program, ensure that the variable `$BOT` store your robot's host name, and run the following commands:
 
-### 3. Define dependencies
+```
+dts devel build -f -H $BOT
+dts devel run -H $BOT
+```
 
-List the dependencies in the files `dependencies-apt.txt` and
-`dependencies-py3.txt` (apt packages and pip packages respectively).
+## Credit:
 
-### 4. Place your code
+This code is built from a template that provides a boilerplate repository for developing ROS-based software in Duckietown (https://github.com/duckietown/template-ros).
 
-Place your code in the directory `/packages/` of
-your new repository.
+Build on top of by Nadeen Mohamed and Celina Sheng.
 
-### 5. Setup launchers
+Code was also borrowed (and properly cited in code) from the following sources.
 
-The directory `/launchers` can contain as many launchers (launching scripts)
-as you want. A default launcher called `default.sh` must always be present.
-
-If you create an executable script (i.e., a file with a valid shebang statement)
-a launcher will be created for it. For example, the script file
-`/launchers/my-launcher.sh` will be available inside the Docker image as the binary
-`dt-launcher-my-launcher`.
-
-When launching a new container, you can simply provide `dt-launcher-my-launcher` as
-command.
-
-## Resources:
-
-https://get-help.robotigniteacademy.com/t/how-to-stop-your-robot-when-ros-is-shutting-down/225
-https://github.com/duckietown/dt-core/blob/daffy/packages/led_emitter/src/led_emitter_node.py
+- https://docs.duckietown.org/daffy/duckietown-robotics-development/out/dt_infrastructure.html
+- https://docs.duckietown.org/daffy/duckietown-robotics-development/out/odometry_modeling.html
+- https://github.com/duckietown/dt-duckiebot-interface/blob/daffy/packages/wheels_driver/src/wheels_driver_node.py
+- http://wiki.ros.org/ROS/Tutorials/WritingServiceClient%28python%29
+- https://get-help.robotigniteacademy.com/t/how-to-stop-your-robot-when-ros-is-shutting-down/225
+- https://github.com/duckietown/dt-core/blob/daffy/packages/led_emitter/src/led_emitter_node.py
+- https://github.com/duckietown/dt-core/blob/daffy/packages/deadreckoning/src/deadreckoning_node.py

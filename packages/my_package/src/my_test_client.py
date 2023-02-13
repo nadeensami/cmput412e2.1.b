@@ -7,7 +7,15 @@ from duckietown_msgs.srv import SetFSMState
 from duckietown.dtros import DTROS, NodeType
 
 NAME = 'led_server'
+'''
+Basic code for a client was taken from
+Writing a Simple Service and Client (Python), ROS Wiki
+Link: http://wiki.ros.org/ROS/Tutorials/WritingServiceClient%28python%29
 
+Basic code for a node was taken from
+Unit C-2: Development in the Duckietown infrastructure, Hands-on Robotics Development using Duckietown
+Link: https://docs.duckietown.org/daffy/duckietown-robotics-development/out/dt_infrastructure.html
+'''
 class LEDClientNode(DTROS):
   def __init__(self, node_name):
     super(LEDClientNode, self).__init__(node_name=node_name, node_type=NodeType.GENERIC)
@@ -29,11 +37,7 @@ class LEDClientNode(DTROS):
           rospy.loginfo("Sending color: %s", color)
           change_color(color)
 
-
       # rate = rospy.Rate(0.5)
-
-
-
       # for color in colors:
       #   rospy.loginfo("Sending color: %s", color)
       #   change_color(color)

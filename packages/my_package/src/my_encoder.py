@@ -8,6 +8,11 @@ import message_filters
 
 NAME = 'led_server'
 
+'''
+Skeleton code for an odometry node was taken from
+Unit E-3: Odometry with Wheel Encoders, Hands-on Robotics Development using Duckietown
+Link: https://docs.duckietown.org/daffy/duckietown-robotics-development/out/odometry_modeling.html
+'''
 class OdometryNode(DTROS):
   def __init__(self, node_name):
     """
@@ -198,6 +203,7 @@ class OdometryNode(DTROS):
     # 8. Write total time for task execution
     end_time = time.time()
     print("DONE PROGRAM. Total execution time: ", end_time - self._start_time)
+    print("Final location:", f"({self.x}, {self.y}, {self.yaw})")
 
   def publishCommand(self, left_vel, right_vel):
     self.msg_wheels_cmd.header.stamp = rospy.Time.now()

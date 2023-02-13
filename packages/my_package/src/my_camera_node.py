@@ -7,6 +7,11 @@ from sensor_msgs.msg import CompressedImage
 from PIL import Image
 import io
 
+'''
+Basic code for a node was taken from
+Unit C-2: Development in the Duckietown infrastructure, Hands-on Robotics Development using Duckietown
+Link: https://docs.duckietown.org/daffy/duckietown-robotics-development/out/dt_infrastructure.html
+'''
 class MyCameraNode(DTROS):
     def __init__(self, node_name):
         # initialize the DTROS parent class

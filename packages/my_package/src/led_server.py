@@ -7,6 +7,11 @@ from std_msgs.msg import Header, ColorRGBA
 
 NAME = 'led_server'
 
+'''
+Basic code for a server was taken from
+Writing a Simple Service and Client (Python), ROS Wiki
+Link: http://wiki.ros.org/ROS/Tutorials/WritingServiceClient%28python%29
+'''
 class LEDServerNode(DTROS):
   def __init__(self, node_name):
     super(LEDServerNode, self).__init__(node_name=node_name, node_type=NodeType.GENERIC)
@@ -30,6 +35,12 @@ class LEDServerNode(DTROS):
     }
 
   def change_color(self, request):
+    '''
+    Code for this function was inspired by 
+    "duckietown/dt-core", file "led_emitter_node.py"
+    Link: https://github.com/duckietown/dt-core/blob/daffy/packages/led_emitter/src/led_emitter_node.py
+    Author: GitHub user liampaull
+    '''
     color = request.state
 
     if color not in self.colors:

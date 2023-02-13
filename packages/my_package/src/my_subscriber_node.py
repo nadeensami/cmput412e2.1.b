@@ -5,6 +5,11 @@ import rospy
 from duckietown.dtros import DTROS, NodeType
 from std_msgs.msg import String
 
+'''
+Basic code for a node was taken from
+Unit C-2: Development in the Duckietown infrastructure, Hands-on Robotics Development using Duckietown
+Link: https://docs.duckietown.org/daffy/duckietown-robotics-development/out/dt_infrastructure.html
+'''
 class MySubscriberNode(DTROS):
     def __init__(self, node_name):
         # initialize the DTROS parent class
