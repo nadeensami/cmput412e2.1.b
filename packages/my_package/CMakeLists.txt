@@ -7,8 +7,6 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
 )
 
-add_service_files(DIRECTORY srv FILES ColorService.srv)
-
 catkin_package(CATKIN_DEPENDS 
   message_runtime
   std_msgs
